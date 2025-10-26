@@ -1,213 +1,224 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>I AI Health</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: system-ui, sans-serif;
-      background: #f8f9fa;
-      display: flex;
-      flex-direction: column;
-      min-height: 100vh;
-      height: auto;
-      overflow-x: hidden;
-    }
+<meta charset="UTF-8" />
+<title>I AI Health</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  body {
+    margin: 0;
+    font-family: system-ui, sans-serif;
+    background: #f7f8fc;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100vh;
+  }
 
-    /* 🔹 Sticky header */
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      background-color: #0b1b3d;
-      color: white;
-      padding: 15px 20px;
-      font-weight: bold;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    }
+  header {
+    background-color: #0b1b3d;
+    color: white;
+    padding: 10px 18px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 900px;
+  }
 
-    header label {
-      font-weight: 400;
-      margin-right: 6px;
-    }
+  #chat-container {
+    flex: 1;
+    width: 100%;
+    max-width: 900px;
+    display: flex;
+    flex-direction: column;
+  }
 
-    select {
-      border-radius: 6px;
-      padding: 6px 8px;
-      font-size: 14px;
-      background: #fff;
-      border: none;
-      min-width: 220px;
-    }
+  #chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 40px;
+    display: flex;
+    flex-direction: column;
+    margin: 0 auto;
+    scroll-behavior: smooth;
+  }
 
-    /* 🔹 Scrollable chat area */
-    #chat {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      scroll-behavior: smooth;
-    }
+  .msg {
+    margin: 12px 0;
+    font-size: 16px;
+    line-height: 1.55;
+    animation: fadeIn 0.3s ease-in;
+  }
 
-    .msg {
-      padding: 10px 14px;
-      border-radius: 10px;
-      margin: 8px 0;
-      max-width: 85%;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-      white-space: pre-line;
-      line-height: 1.4;
-    }
+  .user {
+    align-self: flex-end;
+    color: #0b1b3d;
+    font-weight: 500;
+  }
 
-    .user {
-      background: #e8f0fe;
-      align-self: flex-end;
-    }
+  .ai {
+    align-self: flex-start;
+    color: #222;
+    max-width: 90%;
+  }
 
-    .ai {
-      background: #fff;
-      align-self: flex-start;
-    }
+  .ai ol, .ai ul {
+    margin: 4px 0 4px 20px;
+    padding: 0;
+  }
 
-    /* 🔹 Sticky footer */
-    footer {
-      position: sticky;
-      bottom: 0;
-      z-index: 100;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: center;
-      padding: 10px;
-      background: #fff;
-      border-top: 1px solid #ddd;
-      gap: 8px;
-      box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.1);
-    }
+  .ai li {
+    margin: 2px 0;
+    line-height: 1.6;
+  }
 
-    input {
-      flex: 1;
-      min-width: 200px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      padding: 10px 12px;
-      font-size: 16px; /* prevents iOS zoom-in */
-      outline: none;
-    }
+  .welcome {
+    text-align: center;
+    font-size: 15px;
+    color: #333;
+    margin-top: 10px;
+    line-height: 1.4;
+  }
 
-    button {
-      border: none;
-      border-radius: 8px;
-      padding: 10px 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: 0.2s;
-      font-size: 15px;
-    }
+  footer {
+    background: #fff;
+    border-top: 1px solid #ddd;
+    padding: 10px;
+    width: 100%;
+    max-width: 900px;
+    position: sticky;
+    bottom: 0;
+  }
 
-    #sendBtn {
-      background-color: #46310a;
-      color: #fff;
-    }
+  .chat-input-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #f3f4f6;
+    border: 1px solid #ccc;
+    border-radius: 25px;
+    padding: 6px 10px;
+  }
 
-    #sendBtn:hover {
-      background-color: #4d1d0b;
-    }
+  .chat-input-row textarea {
+    flex: 1;
+    resize: none;
+    overflow-y: hidden;
+    border: none;
+    background: transparent;
+    padding: 6px 10px;
+    font-size: 15px;
+    outline: none;
+    height: 28px;
+    max-height: 90px;
+  }
 
-    #clearBtn {
-      background-color: #f0f0f0;
-      color: #333;
-      border: 1px solid #ccc;
-    }
+  #sendBtn {
+    background-color: #0b1b3d;
+    color: white;
+    font-size: 16px;
+    border: none;
+    border-radius: 50%;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: 0.2s;
+  }
 
-    #clearBtn:hover {
-      background-color: #e4e4e4;
-    }
+  #sendBtn:hover {
+    background-color: #1f3b80;
+    transform: scale(1.05);
+  }
 
-    #pdfBtn {
-      background-color: #2e1a09;
-      color: #fff;
-    }
+  .side-buttons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
 
-    #pdfBtn:hover {
-      background-color: #462608;
-    }
+  .side-buttons button {
+    border: none;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: 0.2s;
+  }
 
-    /* 🔹 Loading animation */
-    .loading {
-      display: inline-block;
-      font-weight: 600;
-      color: #555;
-    }
-    .loading::after {
-      content: '';
-      animation: dots 1.2s steps(3, end) infinite;
-    }
-    @keyframes dots {
-      0% { content: ''; }
-      33% { content: '.'; }
-      66% { content: '..'; }
-      100% { content: '...'; }
-    }
+  #clearBtn {
+    background-color: #f0f0f0;
+    color: #333;
+    border: 1px solid #ccc;
+  }
 
-    /* 🔹 Mobile responsive tweaks */
-    @media (max-width: 600px) {
-      header {
-        flex-direction: column;
-        text-align: center;
-      }
+  #clearBtn:hover {
+    background-color: #e4e4e4;
+  }
 
-      select {
-        width: 100%;
-      }
+  #pdfBtn {
+    background-color: #2e1a09;
+    color: white;
+  }
 
-      footer {
-        flex-direction: column;
-      }
+  #pdfBtn:hover {
+    background-color: #462608;
+  }
 
-      button {
-        width: 100%;
-      }
+  select {
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 14px;
+    background: #fff;
+    border: none;
+    margin-left: 10px;
+  }
 
-      #chat {
-        padding: 12px;
-      }
-    }
-  </style>
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
 </head>
 
 <body>
   <header>
     <span>I AI Health</span>
     <div>
-      <label for="patientSelect">Select Patient:</label>
+      <label for="patientSelect" style="font-weight:400; margin-right:6px;">Select Patient:</label>
       <select id="patientSelect">
         <option value="">-- Select Patient (optional) --</option>
       </select>
     </div>
   </header>
 
-  <div id="chat">
-    <div class="msg ai">
-      <b>Welcome to I AI Health.</b><br />
-      Ask any health-related question, or select a patient above to get patient-specific insights.
+  <div id="chat-container">
+    <div id="chat">
+      <div class="welcome">
+        <b>Welcome to I AI Health.</b><br>
+        Ask any health-related question, or select a patient above to get patient-specific insights.
+      </div>
     </div>
-  </div>
 
-  <footer>
-    <input id="userInput" type="text" placeholder="Ask any health question..." />
-    <button id="sendBtn">Send</button>
-    <button id="clearBtn">Clear</button>
-    <button id="pdfBtn">Generate PDF</button>
-  </footer>
+    <footer>
+      <div class="chat-input-row">
+        <textarea id="userInput" rows="1" placeholder="Ask any health question..."></textarea>
+        <button id="sendBtn" title="Send">➤</button>
+        <div class="side-buttons">
+          <button id="clearBtn" title="Clear">🧹</button>
+          <button id="pdfBtn" title="Download PDF">📄</button>
+        </div>
+      </div>
+    </footer>
+  </div>
 
   <script>
     const API_URL = "https://qpzsuekcrorq457i3t7kvmovei0isgcv.lambda-url.us-west-2.on.aws";
@@ -220,10 +231,11 @@
 
     let currentPatient = "";
 
-    function addMessage(role, text) {
+    function addMessage(role, text, isHTML = false) {
       const div = document.createElement("div");
       div.classList.add("msg", role === "ai" ? "ai" : "user");
-      div.textContent = text;
+      if (isHTML) div.innerHTML = text;
+      else div.textContent = text;
       chat.appendChild(div);
       chat.scrollTop = chat.scrollHeight;
       return div;
@@ -242,15 +254,14 @@
             patientSelect.appendChild(opt);
           }
         }
-      } catch (e) {
-        console.warn("Error loading patients:", e);
+      } catch {
         const opt = document.createElement("option");
         opt.textContent = "Error loading patients";
         patientSelect.appendChild(opt);
       }
     }
 
-    patientSelect.addEventListener("change", (e) => {
+    patientSelect.addEventListener("change", e => {
       currentPatient = e.target.value;
       if (!currentPatient) {
         addMessage("ai", "Switched to general health Q&A mode.");
@@ -264,9 +275,10 @@
       if (!question) return;
       addMessage("user", question);
       input.value = "";
+      input.style.height = "24px";
 
-      const loadingDiv = addMessage("ai", "");
-      loadingDiv.classList.add("loading");
+      const loadingDiv = addMessage("ai", "...");
+      loadingDiv.style.opacity = "0.5";
 
       try {
         const endpoint = currentPatient ? "/ask" : "/general";
@@ -277,29 +289,105 @@
         const res = await fetch(`${API_URL}${endpoint}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify(body)
         });
 
         const data = await res.json();
         loadingDiv.remove();
-        addMessage("ai", data.answer || "No response from AI.");
-      } catch (err) {
+
+        let raw = data.answer || "No response from AI.";
+
+        // Convert markdown-like formatting to HTML
+        raw = raw.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+
+        // Create ordered lists
+        raw = raw
+          .replace(/(?:^|\n)(\d+)\.\s/g, (match, num) => `</li><li>${num}. `)
+          .replace(/^<\/li>/, '<ol><li>')
+          .concat("</li></ol>")
+          .replace(/<\/ol><ol>/g, '');
+
+        // Unordered bullets
+        raw = raw.replace(/- /g, '<br>• ');
+
+        // Clean line breaks
+        raw = raw.replace(/\n\s*\n/g, '<br>').replace(/\n/g, '<br>');
+
+        const aiDiv = addMessage("ai", "", true);
+        animateText(aiDiv, raw); // scroll while adding
+      } catch {
         loadingDiv.remove();
-        addMessage("ai", " Error connecting to AI.");
+        addMessage("ai", "⚠️ Error connecting to AI.");
       }
     }
 
-    pdfBtn.addEventListener("click", () => {
-      alert("PDF export feature is temporarily disabled in this demo version.");
-    });
+    // Smooth typing animation + auto-scroll
+    async function animateText(div, html) {
+      let i = 0;
+      const speed = 10;
+      const plain = html.replace(/<[^>]+>/g, "");
+      div.innerHTML = "";
+
+      const interval = setInterval(() => {
+        div.innerHTML = html.slice(0, i) + (i % 2 ? "|" : "");
+        chat.scrollTop = chat.scrollHeight; // keep scrolling down
+        i++;
+        if (i >= html.length) {
+          div.innerHTML = html;
+          chat.scrollTop = chat.scrollHeight;
+          clearInterval(interval);
+        }
+      }, speed);
+    }
 
     sendBtn.addEventListener("click", sendMessage);
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
     clearBtn.addEventListener("click", () => {
-      chat.innerHTML = `<div class="msg ai"><b>Welcome to I AI Health.</b><br>Ask any health-related question, or select a patient above to get patient-specific insights.</div>`;
+      chat.innerHTML = `<div class="welcome"><b>Welcome to I AI Health.</b><br>Ask any health-related question, or select a patient above to get patient-specific insights.</div>`;
+    });
+
+    pdfBtn.addEventListener("click", async () => {
+      const allText = Array.from(document.querySelectorAll(".msg"))
+        .map(m => (m.classList.contains("user") ? "You: " : "AI: ") + m.textContent)
+        .join("\n\n");
+
+      try {
+        const res = await fetch(`${API_URL}/pdf`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: allText })
+        });
+
+        const data = await res.json();
+        if (data.file) {
+          const byteChars = atob(data.file);
+          const byteNumbers = Array.from(byteChars, c => c.charCodeAt(0));
+          const blob = new Blob([new Uint8Array(byteNumbers)], { type: "application/pdf" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = data.filename || "I_AI_Report.pdf";
+          link.click();
+          URL.revokeObjectURL(url);
+        }
+      } catch {
+        alert("Failed to generate PDF");
+      }
+    });
+
+    input.addEventListener("input", () => {
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 90) + "px";
     });
 
     loadPatients();
   </script>
 </body>
 </html>
+
