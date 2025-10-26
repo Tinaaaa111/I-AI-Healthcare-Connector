@@ -1,35 +1,67 @@
-import json, boto3, io, csv, unicodedata, base64
-import pandas as pd
+import json, boto3, io, unicodedata, base64
 from fpdf import FPDF
 from datetime import datetime
 
-# ---- CONFIG ----
+# --- CONFIG ---
 REGION = "us-west-2"
 BUCKET = "syntheademodata"
 PROCESSED_PREFIX = "processed/"
 
-# ---- CLIENTS ----
+# --- CLIENTS ---
 s3 = boto3.client("s3", region_name=REGION)
 bedrock = boto3.client("bedrock-runtime", region_name=REGION)
 
-# ---- HELPERS ----
+# --- CORS HEADERS ---
+def cors_headers():
+    return {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type,Authorization,Accept",
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
+    }
+
+# --- UTILITIES ---
 def s3_read_text(key):
     try:
         obj = s3.get_object(Bucket=BUCKET, Key=key)
         return obj["Body"].read().decode("utf-8", errors="ignore")
     except Exception as e:
-        if "NoSuchKey" not in str(e):
-            print(f"⚠️ Error reading {key}: {e}")
+        print(f" Error reading {key}: {e}")
         return ""
 
 def clean_text(text):
     if not text:
         return ""
     text = unicodedata.normalize("NFKD", str(text))
-    text = text.encode("latin-1", "replace").decode("latin-1")
-    return text
+    return text.encode("latin-1", "replace").decode("latin-1")
 
-# ---- CORE DATA HELPERS ----
+# --- BEDROCK CALL ---
+def ask_bedrock(system_prompt, user_prompt):
+    model_id = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+    body = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "system": system_prompt,
+        "messages": [
+            {"role": "user", "content": [{"type": "text", "text": user_prompt}]}
+        ],
+        "max_tokens": 700,
+        "temperature": 0.2
+    }
+    try:
+        response = bedrock.invoke_model(
+            modelId=model_id,
+            body=json.dumps(body),
+            contentType="application/json",
+            accept="application/json"
+        )
+        result = json.loads(response["body"].read())
+        if "content" in result and isinstance(result["content"], list):
+            return "".join(p.get("text", "") for p in result["content"] if "text" in p)
+        return result.get("output_text", "No valid response text found.")
+    except Exception as e:
+        print(f" Bedrock error: {e}")
+        raise
+
+# --- PATIENT HELPERS ---
 def list_patients_from_processed():
     resp = s3.list_objects_v2(Bucket=BUCKET, Prefix=PROCESSED_PREFIX)
     if "Contents" not in resp:
@@ -39,191 +71,160 @@ def list_patients_from_processed():
         parts = obj["Key"].split("/")
         if len(parts) > 2 and parts[1]:
             patient_ids.add(parts[1])
+    return [{"id": pid, "name": pid} for pid in sorted(patient_ids)]
 
-    patients = []
-    for pid in sorted(patient_ids):
-        csv_data = s3_read_text(f"{PROCESSED_PREFIX}{pid}/patients.csv") or s3_read_text(f"{PROCESSED_PREFIX}{pid}/patient.csv")
-        name = pid
-        try:
-            rows = list(csv.reader(io.StringIO(csv_data)))
-            if len(rows) > 1 and "name" in rows[0]:
-                name = rows[1][rows[0].index("name")]
-        except Exception:
-            pass
-        patients.append({"id": pid, "name": name})
-    return patients
+def find_patient_folder(pid):
+    resp = s3.list_objects_v2(Bucket=BUCKET, Prefix=PROCESSED_PREFIX)
+    for obj in resp.get("Contents", []):
+        folder = obj["Key"].split("/")[1]
+        if pid in folder or folder.startswith(pid.split("_")[0]):
+            return folder
+    return pid
 
-def summarize_hospitals_and_departments(pid):
-    key = f"{PROCESSED_PREFIX}{pid}/encounters.csv"
-    data = s3_read_text(key)
-    if not data:
-        return "⚠️ No encounter data available."
-    try:
-        df = pd.read_csv(io.StringIO(data))
-    except Exception as e:
-        return f"⚠️ Error reading encounters.csv: {e}"
-    df.columns = [c.lower() for c in df.columns]
-    if "serviceprovider" not in df.columns:
-        return "⚠️ Missing hospital/provider info."
-    if "class" not in df.columns:
-        df["class"] = "Unknown"
-    grouped = df.groupby(["serviceprovider", "class"]).size().reset_index(name="visits")
-    lines = ["📍 Encounter Summary by Hospital and Department:"]
-    for _, r in grouped.iterrows():
-        lines.append(f"- {r['serviceprovider']} → {r['class']}: {r['visits']} visit(s)")
-    return "\n".join(lines)
-
-def analyze_trends(pid):
-    base = f"{PROCESSED_PREFIX}{pid}/"
-    sections, missing = [], []
-    vitals_data = s3_read_text(base + "vitals.csv")
-    if vitals_data:
-        try:
-            df = pd.read_csv(io.StringIO(vitals_data))
-            df.columns = [c.lower() for c in df.columns]
-            numeric_cols = [c for c in df.columns if df[c].dtype in ["float64", "int64"]]
-            vitals = []
-            for col in numeric_cols:
-                s = df[col].dropna()
-                if len(s) >= 2:
-                    t = "increasing" if s.iloc[-1] > s.iloc[0] else "decreasing"
-                    vitals.append(f"- {col.title()} is {t} ({s.iloc[0]} → {s.iloc[-1]})")
-            if vitals:
-                sections.append("📈 Vitals Trends:\n" + "\n".join(vitals))
-        except Exception as e:
-            missing.append(str(e))
-    labs_data = s3_read_text(base + "labs.csv")
-    if labs_data:
-        try:
-            df = pd.read_csv(io.StringIO(labs_data))
-            df.columns = [c.lower() for c in df.columns]
-            num_cols = [c for c in df.columns if df[c].dtype in ["float64", "int64"]]
-            labs = []
-            for col in num_cols:
-                s = df[col].dropna()
-                if len(s) >= 2:
-                    t = "increasing" if s.iloc[-1] > s.iloc[0] else "decreasing"
-                    labs.append(f"- {col.title()} is {t} ({s.iloc[0]} → {s.iloc[-1]})")
-            if labs:
-                sections.append("🧪 Lab Trends:\n" + "\n".join(labs))
-        except Exception as e:
-            missing.append(str(e))
-    return "\n\n".join(sections) or "⚠️ No trend data."
-
-def ask_bedrock(system_prompt, user_prompt):
-    model = "anthropic.claude-3-5-sonnet-20240620-v1:0"
-    body = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "system": system_prompt,
-        "messages": [{"role": "user", "content": [{"type": "text", "text": user_prompt}]}],
-        "max_tokens": 700,
-        "temperature": 0.2
+# --- SMART FILE FILTER ---
+def infer_relevant_csvs(question):
+    q = question.lower()
+    mapping = {
+        "encounter": ["encounter.csv"],
+        "hospital": ["encounter.csv", "organization.csv"],
+        "visit": ["encounter.csv", "organization.csv"],
+        "lab": ["observation.csv", "diagnosticreport.csv"],
+        "medication": ["medication.csv", "medicationrequest.csv", "medicationadministration.csv"],
+        "condition": ["condition.csv", "allergyintolerance.csv"],
+        "procedure": ["procedure.csv"],
+        "immunization": ["immunization.csv"],
+        "organization": ["organization.csv"],
+        "provider": ["practitioner.csv"],
+        "patient": ["patient.csv"]
     }
-    r = bedrock.invoke_model(modelId=model, body=json.dumps(body),
-                             contentType="application/json", accept="application/json")
-    res = json.loads(r["body"].read())
-    return res["content"][0]["text"]
+    matched = set()
+    for key, files in mapping.items():
+        if key in q:
+            matched.update(files)
+    if not matched:
+        matched.update(["encounter.csv", "condition.csv", "observation.csv"])
+    print(f" Selected CSVs for question '{question}': {matched}")
+    return list(matched)
 
-# ---- CORE HANDLERS ----
+def format_explain_predict(answer_text):
+    txt = answer_text.strip()
+    txt = txt.split("Prediction:")[0].strip()
+    if "Explanation:" not in txt:
+        txt = f"Explanation:\n{txt}"
+    return txt
+
+# --- HANDLERS ---
 def handle_list_patients():
     pts = list_patients_from_processed()
-    return {"statusCode": 200, "headers": {}, "body": json.dumps({"patients": pts})}
+    return {"statusCode": 200, "headers": cors_headers(), "body": json.dumps({"patients": pts})}
+
+def handle_general(event):
+    body = json.loads(event.get("body", "{}"))
+    q = body.get("question")
+    tone = body.get("tone", "patient")
+    if not q:
+        return {"statusCode": 400, "headers": cors_headers(), "body": json.dumps({"error": "Missing question"})}
+    style = "Use simple, empathetic language." if tone == "patient" else "Use concise professional language."
+    system_prompt = (
+        "You are a safe, trustworthy health educator. "
+        "Provide accurate, easy-to-understand general health information. "
+        "Do not give diagnoses or treatment. " + style
+    )
+    raw = ask_bedrock(system_prompt, q)
+    answer = format_explain_predict(raw)
+    return {"statusCode": 200, "headers": cors_headers(), "body": json.dumps({"answer": answer})}
 
 def handle_ask(event):
     body = json.loads(event.get("body", "{}"))
-    role = body.get("role", "provider").lower()
     pid = body.get("patientId")
     q = body.get("question")
+    tone = body.get("tone", "patient")
 
     if not q:
-        return {"statusCode": 400, "headers": {}, "body": json.dumps({"error": "Missing question"})}
+        return {"statusCode": 400, "headers": cors_headers(), "body": json.dumps({"error": "Missing question"})}
+    if not pid:
+        return handle_general(event)
 
-    # --- If the question doesn't reference a patient, treat it as general ---
-    if not pid or "what is" in q.lower() or "explain" in q.lower() or "how does" in q.lower() or "difference" in q.lower():
-        system_prompt = (
-            "You are a general healthcare AI assistant. "
-            "Answer clearly and accurately using medical knowledge, but keep the tone simple and educational. "
-            "If the question is about medical terms, tests, or diseases, explain them concisely and safely."
-        )
-        answer = ask_bedrock(system_prompt, q)
-        return {"statusCode": 200, "headers": {}, "body": json.dumps({"answer": answer})}
+    folder = find_patient_folder(pid)
+    print(f"🩺 Using folder: {folder}")
 
-    # --- Otherwise, use patient-specific summarization ---
-    ctx = []
-    for n in ["patients.csv", "encounters.csv", "conditions.csv", "labs.csv", "vitals.csv", "imaging.csv"]:
-        data = s3_read_text(f"{PROCESSED_PREFIX}{pid}/{n}")
-        if data:
-            ctx.append(f"## {n}\n{data[:1000]}")
-        else:
-            if n == "vitals.csv":
-                ctx.append("## vitals.csv\nBP: 120/78 mmHg, HR: 72 bpm, Temp: 98.7°F, SpO2: 99%, Resp: 16/min")
-            elif n == "labs.csv":
-                ctx.append("## labs.csv\nCBC: Normal, Glucose: 104 mg/dL, Cholesterol: 182 mg/dL, Hemoglobin: 13.6 g/dL")
-            elif n == "imaging.csv":
-                ctx.append("## imaging.csv\nChest X-ray: Clear lungs, MRI Brain: Normal, CT Abdomen: No acute findings.")
+    ctx_parts = []
+    try:
+        resp = s3.list_objects_v2(Bucket=BUCKET, Prefix=f"{PROCESSED_PREFIX}{folder}/")
+        files = [obj["Key"] for obj in resp.get("Contents", []) if obj["Key"].endswith(".csv")]
+        print(f" Found {len(files)} CSVs for {pid}")
 
-    ctx.append(summarize_hospitals_and_departments(pid))
-    ctx.append(analyze_trends(pid))
-    context = "\n".join(ctx)
+        selected = infer_relevant_csvs(q)
+        for f in files:
+            if any(sel.lower() in f.lower() for sel in selected):
+                data = s3_read_text(f)
+                if not data.strip():
+                    continue
+                sample = "\n".join(data.splitlines()[:50])
+                ctx_parts.append(f"### {f.split('/')[-1]}\n{sample}")
+    except Exception as e:
+        ctx_parts.append(f" Error loading patient files: {e}")
 
+    context = "\n\n".join(ctx_parts) or "No patient data found."
+
+    # Truncate if too long for Claude
+    if len(context) > 50000:
+        context = context[:50000] + "\n\n[Note: patient data truncated for size limit]"
+
+    style = "Use simple, empathetic language." if tone == "patient" else "Use concise professional language."
     system_prompt = (
-        "You are a clinical AI assistant. Summarize patient information from vitals, labs, and imaging. "
-        "Provide structured insights in sections like Vitals, Labs, Imaging, and Summary. "
-        "If data is simulated, mention that it's for demonstration only."
+        "You are a clinical AI assistant. Analyze available patient data (encounters, conditions, "
+        "observations, medications, diagnostics, etc.) and summarize insights related to the question. "
+        "If data was truncated or incomplete, acknowledge that clearly. " + style
     )
-
-    answer = ask_bedrock(system_prompt, f"Context:\n{context}\n\nQuestion: {q}")
-    return {"statusCode": 200, "headers": {}, "body": json.dumps({"answer": answer})}
+    try:
+        response_text = ask_bedrock(system_prompt, f"Context:\n{context}\n\nQuestion: {q}")
+        formatted = format_explain_predict(response_text)
+        return {"statusCode": 200, "headers": cors_headers(), "body": json.dumps({"answer": formatted})}
+    except Exception as e:
+        print(" Bedrock or context error:", e)
+        return {"statusCode": 500, "headers": cors_headers(), "body": json.dumps({"error": str(e), "answer": f"⚠️ Lambda error: {str(e)}"})}
 
 def handle_generate_pdf(event):
-    body = json.loads(event.get("body", "{}")) if event.get("body") else {}
-    pid   = body.get("patientId", "unknown")
-    pname = body.get("patientName", "Unknown Patient")
-    otype = body.get("orderType", "Lab Panel")
-    odet  = body.get("orderDetails", "CBC, CMP, Lipid Panel")
-    reqby = body.get("requestedBy", "Provider")
+    try:
+        body = json.loads(event.get("body", "{}"))
+        content = body.get("content", "")
+        if not content:
+            return {"statusCode": 400, "headers": cors_headers(), "body": json.dumps({"error": "No content provided"})}
+        filename = f"IAI_Report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+        safe_content = clean_text(content)
+        if len(safe_content) > 40000:
+            safe_content = safe_content[:40000] + "\n\n(Truncated for size limit)"
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(0, 10, "I AI Healthcare Connector — Report", ln=True, align="C")
+        pdf.ln(8)
+        pdf.set_font("Arial", "", 12)
+        pdf.multi_cell(0, 8, safe_content)
+        pdf_bytes = pdf.output(dest="S").encode("latin-1", "ignore")
+        b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        return {"statusCode": 200, "headers": {**cors_headers(), "Content-Type": "application/json"}, "body": json.dumps({"file": b64, "filename": filename})}
+    except Exception as e:
+        print(" PDF generation error:", e)
+        return {"statusCode": 500, "headers": cors_headers(), "body": json.dumps({"error": "Failed to generate PDF", "details": str(e)})}
 
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, clean_text("Provider Order Summary"), ln=True, align="C")
-    pdf.set_font("Arial", "", 12)
-    pdf.cell(0, 8, clean_text(f"Generated: {datetime.utcnow().isoformat(timespec='seconds')}Z"), ln=True)
-    pdf.cell(0, 8, clean_text(f"Requested By: {reqby}"), ln=True)
-    pdf.ln(5)
-    pdf.cell(0, 8, clean_text(f"Patient: {pname} (ID: {pid})"), ln=True)
-    pdf.multi_cell(0, 8, clean_text(f"Order Type: {otype}\nDetails: {odet}"))
-    pdf.ln(8)
-    pdf.multi_cell(0, 8, clean_text("This order is securely generated by I AI Healthcare Connector."))
-
-    pdf_bytes = pdf.output(dest="S").encode("latin-1")
-    encoded = base64.b64encode(pdf_bytes).decode("utf-8")
-    return {
-        "statusCode": 200,
-        "headers": {
-            "Content-Type": "application/pdf",
-            "Content-Disposition": f'attachment; filename="{pid}_order.pdf"'
-        },
-        "isBase64Encoded": True,
-        "body": encoded
-    }
-
-# ---- ROUTER ----
+# --- MAIN HANDLER ---
 def lambda_handler(event, context):
-    print("Received event:", json.dumps(event, indent=2))
-    http_info = event.get("requestContext", {}).get("http", {})
-    method = http_info.get("method", event.get("httpMethod", "GET"))
-    path = event.get("rawPath") or http_info.get("path") or "/"
+    print(" Incoming event:", json.dumps(event)[:500])
+    method = event.get("requestContext", {}).get("http", {}).get("method", event.get("httpMethod", "GET"))
+    path = event.get("rawPath") or event.get("path", "/")
 
-    # Handle preflight requests
     if method == "OPTIONS":
-        return {"statusCode": 200, "headers": {}, "body": ""}
-
+        return {"statusCode": 200, "headers": cors_headers(), "body": ""}
     if method == "GET" and path in ["/", "/patients"]:
         return handle_list_patients()
+    if method == "POST" and path == "/general":
+        return handle_general(event)
     if method == "POST" and path == "/ask":
         return handle_ask(event)
-    if method == "POST" and path in ["/order-pdf", "/orderpdf"]:
+    if method == "POST" and path in ["/pdf", "/order-pdf"]:
         return handle_generate_pdf(event)
 
-    return {"statusCode": 404, "headers": {}, "body": json.dumps({"error": f"Not found {method} {path}"})}
+    return {"statusCode": 404, "headers": cors_headers(), "body": json.dumps({"error": f"Not found for {method} {path}"})}
+
