@@ -25,6 +25,8 @@
     justify-content: space-between;
     width: 100%;
     max-width: 900px;
+    flex-wrap: wrap;
+    box-sizing: border-box;
   }
 
   #chat-container {
@@ -43,6 +45,7 @@
     flex-direction: column;
     margin: 0 auto;
     scroll-behavior: smooth;
+    box-sizing: border-box;
   }
 
   .msg {
@@ -50,6 +53,7 @@
     font-size: 16px;
     line-height: 1.55;
     animation: fadeIn 0.3s ease-in;
+    word-wrap: break-word;
   }
 
   .user {
@@ -90,6 +94,7 @@
     max-width: 900px;
     position: sticky;
     bottom: 0;
+    box-sizing: border-box;
   }
 
   .chat-input-row {
@@ -100,6 +105,7 @@
     border: 1px solid #ccc;
     border-radius: 25px;
     padding: 6px 10px;
+    box-sizing: border-box;
   }
 
   .chat-input-row textarea {
@@ -128,6 +134,7 @@
     justify-content: center;
     cursor: pointer;
     transition: 0.2s;
+    flex-shrink: 0;
   }
 
   #sendBtn:hover {
@@ -180,11 +187,66 @@
     background: #fff;
     border: none;
     margin-left: 10px;
+    width: 220px;
   }
 
   @keyframes fadeIn {
     from { opacity: 0; transform: translateY(5px); }
     to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ✅ MOBILE RESPONSIVE FIXES */
+  @media (max-width: 600px) {
+    header {
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 12px;
+    }
+
+    header span {
+      font-size: 18px;
+      margin-bottom: 6px;
+    }
+
+    select {
+      margin-top: 6px;
+      width: 90%;
+      font-size: 13px;
+    }
+
+    #chat {
+      padding: 16px 14px;
+      max-width: 100%;
+    }
+
+    .msg {
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    footer {
+      padding: 8px;
+    }
+
+    .chat-input-row {
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 20px;
+    }
+
+    .chat-input-row textarea {
+      font-size: 14px;
+      padding: 4px 6px;
+      height: 24px;
+    }
+
+    #sendBtn,
+    .side-buttons button {
+      width: 32px;
+      height: 32px;
+      font-size: 14px;
+    }
   }
 </style>
 </head>
@@ -314,27 +376,24 @@
         raw = raw.replace(/\n\s*\n/g, '<br>').replace(/\n/g, '<br>');
 
         const aiDiv = addMessage("ai", "", true);
-        animateText(aiDiv, raw); // scroll while adding
+        animateText(aiDiv, raw);
       } catch {
         loadingDiv.remove();
         addMessage("ai", "⚠️ Error connecting to AI.");
       }
     }
 
-    // Smooth typing animation + auto-scroll
     async function animateText(div, html) {
       let i = 0;
       const speed = 10;
-      const plain = html.replace(/<[^>]+>/g, "");
       div.innerHTML = "";
 
       const interval = setInterval(() => {
-        div.innerHTML = html.slice(0, i) + (i % 2 ? "|" : "");
-        chat.scrollTop = chat.scrollHeight; // keep scrolling down
+        div.innerHTML = html.slice(0, i);
+        chat.scrollTop = chat.scrollHeight;
         i++;
         if (i >= html.length) {
           div.innerHTML = html;
-          chat.scrollTop = chat.scrollHeight;
           clearInterval(interval);
         }
       }, speed);
@@ -353,32 +412,7 @@
     });
 
     pdfBtn.addEventListener("click", async () => {
-      const allText = Array.from(document.querySelectorAll(".msg"))
-        .map(m => (m.classList.contains("user") ? "You: " : "AI: ") + m.textContent)
-        .join("\n\n");
-
-      try {
-        const res = await fetch(`${API_URL}/pdf`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: allText })
-        });
-
-        const data = await res.json();
-        if (data.file) {
-          const byteChars = atob(data.file);
-          const byteNumbers = Array.from(byteChars, c => c.charCodeAt(0));
-          const blob = new Blob([new Uint8Array(byteNumbers)], { type: "application/pdf" });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = data.filename || "I_AI_Report.pdf";
-          link.click();
-          URL.revokeObjectURL(url);
-        }
-      } catch {
-        alert("Failed to generate PDF");
-      }
+      alert("PDF generation not available in demo mode.");
     });
 
     input.addEventListener("input", () => {
